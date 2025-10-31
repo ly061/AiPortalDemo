@@ -5,6 +5,8 @@ import streamlit as st
 import os
 import time
 import logging
+import zipfile
+import shutil
 from pathlib import Path
 from typing import List, Tuple, Optional
 from PIL import Image
@@ -39,6 +41,42 @@ def setup_logging(level: str = 'INFO') -> logging.Logger:
 
 logger = setup_logging()
 
+def extract_zip_to_temp_dir(uploaded_zip, temp_base_dir: Path) -> Path:
+    """解压ZIP文件到临时目录，返回解压后的目录路径"""
+    # 创建唯一的临时目录
+    import uuid
+    extract_dir = temp_base_dir / f"extracted_{uuid.uuid4().hex[:8]}"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 保存ZIP文件
+    zip_path = extract_dir / uploaded_zip.name
+    with open(zip_path, "wb") as f:
+        f.write(uploaded_zip.getbuffer())
+    
+    # 解压ZIP文件
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_dir)
+    
+    # 删除ZIP文件本身
+    zip_path.unlink()
+    
+    return extract_dir
+
+def save_uploaded_files_to_temp_dir(uploaded_files: List, temp_base_dir: Path) -> Path:
+    """保存上传的图片文件到临时目录，返回临时目录路径"""
+    # 创建唯一的临时目录
+    import uuid
+    temp_dir = temp_base_dir / f"images_{uuid.uuid4().hex[:8]}"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 保存所有上传的文件
+    for uploaded_file in uploaded_files:
+        file_path = temp_dir / uploaded_file.name
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+    
+    return temp_dir
+
 def get_image_files(directory: Path) -> List[Path]:
     """获取目录中的所有图片文件"""
     image_files = []
@@ -61,6 +99,54 @@ def get_subdirectories(directory: Path) -> List[Path]:
     # 按目录名排序
     subdirs.sort(key=lambda x: x.name)
     return subdirs
+
+def find_image_folders(root_dir: Path, ignore_dirs: set = None) -> List[Path]:
+    """
+    递归查找所有包含图片的文件夹（只返回包含图片的叶子文件夹）
+    
+    Args:
+        root_dir: 根目录路径
+        ignore_dirs: 要忽略的文件夹名集合（如 _MACOSX, __MACOSX等）
+    
+    Returns:
+        包含图片的文件夹列表（只返回直接包含图片的文件夹，不返回父文件夹）
+    """
+    if ignore_dirs is None:
+        ignore_dirs = {'_macosx', '__macosx', '.ds_store', '.git', '.svn', 'thumbs.db'}
+    
+    image_folders = []
+    
+    def _scan_directory(directory: Path):
+        """递归扫描目录，找到所有直接包含图片的文件夹"""
+        # 跳过系统文件夹
+        if directory.name.lower() in ignore_dirs:
+            return
+        
+        # 检查当前目录是否包含图片
+        image_files = get_image_files(directory)
+        
+        # 检查子目录
+        subdirs = get_subdirectories(directory)
+        has_image_subdirs = False
+        
+        # 先递归检查所有子目录
+        for subdir in subdirs:
+            if subdir.name.lower() not in ignore_dirs:
+                _scan_directory(subdir)
+                # 检查子目录是否包含图片
+                if get_image_files(subdir):
+                    has_image_subdirs = True
+        
+        # 如果当前目录包含图片，且没有包含图片的子目录，则添加当前目录
+        # 这样可以避免重复：如果父文件夹和子文件夹都有图片，只添加子文件夹
+        if image_files and not has_image_subdirs:
+            image_folders.append(directory)
+    
+    _scan_directory(root_dir)
+    
+    # 按路径排序
+    image_folders.sort(key=lambda x: str(x))
+    return image_folders
 
 def sanitize_sheet_name(name: str) -> str:
     """清理sheet名称，确保符合Excel要求"""
@@ -318,19 +404,34 @@ def render_excel_tool():
     # 使用方法介绍
     with st.expander("📖 详细使用说明（点击展开）", expanded=False):
         st.markdown("""
-        ### 📁 文件路径设置
+        ### 📁 文件上传设置
         
-        #### Input Path（输入路径）
-        - **类型**: 文本输入框
-        - **说明**: 选择包含截图文件的目录
-        - **默认值**: 上次使用的路径（如果存在）
-        - **操作**: 可以直接输入路径
-        - **验证**: 必须选择存在的目录
-        - **支持的图片格式**: PNG, JPG, JPEG, GIF, BMP, WEBP, TIFF
-        - **特殊说明**: 
-          - 如果目录下有多个子文件夹，每个子文件夹的图片会放到对应的Sheet中
+        #### 上传方式
+        - **类型**: 单选按钮
+        - **选项**: 
+          - **ZIP文件（推荐 - 保持文件夹结构）**：上传ZIP压缩包，保持文件夹结构，每个文件夹对应一个Sheet（推荐方式）
+          - **多个图片文件**：上传多个图片文件，所有图片放在同一个Sheet中
+        - **说明**: 
+          - ⚠️ **浏览器限制**：浏览器不支持直接选择文件夹，只能逐个选择文件
+          - 💡 **推荐使用ZIP文件方式**：可以一次性上传整个文件夹，更加方便快捷
+          - ZIP文件方式支持文件夹结构，每个文件夹会创建一个对应的Sheet
+        - **ZIP文件说明**: 
+          - 上传ZIP文件后会自动解压
+          - 如果ZIP中包含多个子文件夹，每个文件夹会创建一个对应的Sheet
           - 文件夹名就是Sheet名
-          - 如果没有子文件夹，所有图片会放到一个名为"Screenshots"的Sheet中
+          - 如果ZIP中没有子文件夹，所有图片会放到一个名为"Screenshots"的Sheet中
+        - **多个图片文件说明**:
+          - ⚠️ 浏览器限制，无法直接选择文件夹，需要逐个选择图片文件
+          - 可以同时选择多个图片文件上传（使用Ctrl/Cmd+点击多选）
+          - 所有图片会放在同一个名为"Screenshots"的Sheet中
+          - 图片会按文件名排序
+          - 💡 如果文件较多（>10个），强烈建议使用ZIP文件方式
+        
+        #### 本地路径（可选）
+        - **类型**: 复选框 + 文本输入框
+        - **可见性**: 默认隐藏，需要勾选复选框才显示
+        - **说明**: 仅用于本地开发测试，在线环境中请使用文件上传功能
+        - **注意事项**: ⚠️ 在线环境中无法使用本地路径
         
         #### File Mode（文件模式）
         - **类型**: 复选框
@@ -447,19 +548,118 @@ def render_excel_tool():
         st.session_state.last_input_path = ""
     if 'last_excel_path' not in st.session_state:
         st.session_state.last_excel_path = ""
+    if 'uploaded_files_dir' not in st.session_state:
+        st.session_state.uploaded_files_dir = None
     
-    # 文件路径设置
-    st.markdown("### 📁 文件路径设置")
+    # 文件上传设置
+    st.markdown("### 📁 文件上传设置")
     
-    input_path = st.text_input(
-        "Input Path（输入路径）",
-        value=st.session_state.last_input_path,
-        help="选择包含截图文件的目录，可以直接输入路径",
-        key="excel_input_path"
+    # 上传方式选择
+    upload_mode = st.radio(
+        "上传方式",
+        ["📦 ZIP文件（推荐 - 保持文件夹结构）", "🖼️ 多个图片文件"],
+        help="💡 推荐使用ZIP文件方式：可以一次性上传整个文件夹，保持文件夹结构，每个文件夹对应一个Sheet"
     )
     
-    if input_path and os.path.isdir(input_path):
-        st.session_state.last_input_path = input_path
+    # 创建临时目录用于存储上传的文件
+    temp_base_dir = Path(os.path.join(os.path.expanduser("~"), ".streamlit_temp"))
+    temp_base_dir.mkdir(parents=True, exist_ok=True)
+    
+    uploaded_files_path = None
+    
+    if upload_mode == "📦 ZIP文件（推荐 - 保持文件夹结构）":
+        uploaded_zip = st.file_uploader(
+            "上传ZIP文件",
+            type=["zip"],
+            help="上传包含图片文件的ZIP压缩包，文件夹结构会被保留（每个文件夹对应一个Sheet）",
+            key="upload_zip"
+        )
+        
+        if uploaded_zip:
+            try:
+                # 解压ZIP文件
+                with st.spinner("正在解压ZIP文件..."):
+                    extracted_dir = extract_zip_to_temp_dir(uploaded_zip, temp_base_dir)
+                    st.session_state.uploaded_files_dir = str(extracted_dir)
+                    uploaded_files_path = extracted_dir
+                    st.success(f"✅ ZIP文件已解压: {uploaded_zip.name}")
+                    
+                    # 显示文件夹结构预览
+                    # 使用智能查找函数，找到所有包含图片的文件夹
+                    image_folders = find_image_folders(extracted_dir)
+                    
+                    if image_folders:
+                        st.info(f"📁 检测到 {len(image_folders)} 个包含图片的文件夹，将创建对应的Sheet")
+                        with st.expander("查看文件夹结构"):
+                            for folder in image_folders:
+                                image_count = len(get_image_files(folder))
+                                # 显示相对路径，更清晰
+                                relative_path = folder.relative_to(extracted_dir)
+                                st.write(f"- {relative_path}: {image_count} 张图片")
+                    else:
+                        # 如果没有找到包含图片的文件夹，检查根目录是否有图片
+                        image_count = len(get_image_files(extracted_dir))
+                        if image_count > 0:
+                            st.info(f"📁 检测到 {image_count} 张图片，将放入 'Screenshots' Sheet")
+                        else:
+                            st.warning("⚠️ 未找到图片文件，请检查ZIP文件内容")
+            except Exception as e:
+                st.error(f"❌ 解压ZIP文件失败: {str(e)}")
+                uploaded_files_path = None
+    
+    else:  # 多个图片文件
+        st.info("💡 **提示**: 浏览器不支持直接选择文件夹。如果需要上传多个文件，建议使用ZIP文件方式（上方选项），可以一次性上传整个文件夹。")
+        
+        uploaded_images = st.file_uploader(
+            "上传图片文件（可多选）",
+            type=["png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff"],
+            accept_multiple_files=True,
+            help="⚠️ 注意：浏览器限制，无法直接选择文件夹。如果需要上传多个文件，建议使用ZIP文件方式。当前方式需要逐个选择图片文件。",
+            key="upload_images"
+        )
+        
+        if uploaded_images:
+            if len(uploaded_images) > 10:
+                st.warning(f"⚠️ 您选择了 {len(uploaded_images)} 个文件。如果文件较多，建议使用ZIP文件方式上传，更加方便快捷。")
+            
+            try:
+                # 保存上传的图片文件
+                with st.spinner("正在保存图片文件..."):
+                    images_dir = save_uploaded_files_to_temp_dir(uploaded_images, temp_base_dir)
+                    st.session_state.uploaded_files_dir = str(images_dir)
+                    uploaded_files_path = images_dir
+                    st.success(f"✅ 已上传 {len(uploaded_images)} 张图片")
+            except Exception as e:
+                st.error(f"❌ 保存图片文件失败: {str(e)}")
+                uploaded_files_path = None
+    
+    # 文件路径设置（保留原有功能，但标记为可选）
+    st.markdown("---")
+    st.markdown("### 📁 文件路径设置（可选 - 仅用于本地测试）")
+    
+    use_local_path = st.checkbox(
+        "使用本地路径（仅用于本地开发测试）",
+        value=False,
+        help="⚠️ 在线环境中请使用文件上传功能，此选项仅用于本地开发测试"
+    )
+    
+    input_path = None
+    if use_local_path:
+        input_path = st.text_input(
+            "Input Path（输入路径）",
+            value=st.session_state.last_input_path,
+            help="选择包含截图文件的目录，可以直接输入路径（仅用于本地测试）",
+            key="excel_input_path"
+        )
+        
+        if input_path and os.path.isdir(input_path):
+            st.session_state.last_input_path = input_path
+            uploaded_files_path = None  # 使用本地路径时，不使用上传的文件
+    else:
+        # 如果使用上传的文件，使用上传的文件路径
+        if st.session_state.uploaded_files_dir:
+            input_path = st.session_state.uploaded_files_dir
+            uploaded_files_path = Path(input_path)
     
     # 文件模式
     use_existing_file = st.checkbox(
@@ -578,8 +778,17 @@ def render_excel_tool():
     
     # 清空按钮逻辑
     if clear_button:
+        # 清理临时文件
+        if st.session_state.get('uploaded_files_dir'):
+            try:
+                temp_path = Path(st.session_state.uploaded_files_dir)
+                if temp_path.exists():
+                    shutil.rmtree(temp_path)
+            except:
+                pass
         st.session_state.excel_input_path = ""
         st.session_state.excel_existing_file = ""
+        st.session_state.uploaded_files_dir = None
         st.rerun()
     
     # 退出按钮逻辑
@@ -590,8 +799,17 @@ def render_excel_tool():
     if process_button:
         errors = []
         
-        if not input_path or not os.path.isdir(input_path):
-            errors.append("❌ 请输入有效的输入路径（目录）")
+        # 验证输入路径
+        if not use_local_path:
+            # 使用上传的文件
+            if not uploaded_files_path or not uploaded_files_path.exists():
+                errors.append("❌ 请先上传文件（ZIP文件或图片文件）")
+        else:
+            # 使用本地路径
+            if not input_path or not os.path.isdir(input_path):
+                errors.append("❌ 请输入有效的输入路径（目录）")
+            else:
+                uploaded_files_path = Path(input_path)
         
         if use_existing_file:
             existing_file = st.session_state.get('excel_existing_file', "")
@@ -605,6 +823,12 @@ def render_excel_tool():
                 st.error(error)
         else:
             try:
+                # 确定要处理的路径
+                if uploaded_files_path:
+                    input_path_obj = Path(uploaded_files_path)
+                else:
+                    input_path_obj = Path(input_path)
+                
                 # 创建Excel处理器
                 processor = ExcelProcessor(
                     header_rows=header_rows,
@@ -626,31 +850,31 @@ def render_excel_tool():
                 else:
                     processor.create_workbook()
                 
-                # 检查是否有子文件夹
-                input_path_obj = Path(input_path)
-                subdirs = get_subdirectories(input_path_obj)
+                # 检查是否有包含图片的文件夹（智能查找）
+                image_folders = find_image_folders(input_path_obj)
                 
-                if subdirs:
-                    # 有子文件夹：为每个子文件夹创建一个sheet
+                if image_folders:
+                    # 有包含图片的文件夹：为每个文件夹创建一个sheet
                     total_images = 0
                     processed_images = 0
                     
                     # 先统计总图片数
-                    for subdir in subdirs:
-                        image_files = get_image_files(subdir)
+                    for folder in image_folders:
+                        image_files = get_image_files(folder)
                         total_images += len(image_files)
                     
                     if total_images == 0:
-                        st.warning("⚠️ 在子文件夹中未找到图片文件（支持：png, jpg, jpeg, gif, bmp, webp）")
+                        st.warning("⚠️ 在文件夹中未找到图片文件（支持：png, jpg, jpeg, gif, bmp, webp）")
                     else:
                         # 进度条
                         progress_bar = st.progress(0)
                         status_text = st.empty()
                         
-                        # 处理每个子文件夹
-                        for subdir in subdirs:
-                            sheet_name = subdir.name
-                            image_files = get_image_files(subdir)
+                        # 处理每个包含图片的文件夹
+                        for folder in image_folders:
+                            # 使用文件夹的相对路径作为sheet名，如果有嵌套则使用最后的文件夹名
+                            sheet_name = folder.name
+                            image_files = get_image_files(folder)
                             
                             if image_files:
                                 status_text.text(f"处理文件夹: {sheet_name} ({len(image_files)} 张图片)")
@@ -676,7 +900,10 @@ def render_excel_tool():
                             output_filename = f"updated_{Path(existing_file).stem}_{int(time.time())}.xlsx"
                         else:
                             # 新建模式：使用输入目录名作为文件名
-                            output_filename = f"screenshots_{Path(input_path).name}_{int(time.time())}.xlsx"
+                            if use_local_path:
+                                output_filename = f"screenshots_{input_path_obj.name}_{int(time.time())}.xlsx"
+                            else:
+                                output_filename = f"screenshots_{int(time.time())}.xlsx"
                         
                         output_path = Path(temp_dir) / output_filename
                         
@@ -684,14 +911,22 @@ def render_excel_tool():
                         processor.save_workbook(output_path)
                         
                         # 保存到session state
-                        st.session_state.last_input_path = input_path
+                        if use_local_path:
+                            st.session_state.last_input_path = str(input_path_obj)
                         # 保存输出文件路径供下载使用
                         st.session_state.last_output_file = str(output_path)
+                        
+                        # 清理临时文件（如果不是本地路径）
+                        if not use_local_path and uploaded_files_path and uploaded_files_path.exists():
+                            try:
+                                shutil.rmtree(uploaded_files_path)
+                            except:
+                                pass
                         
                         # 完成提示
                         progress_bar.progress(1.0)
                         status_text.empty()
-                        st.success(f"✅ 处理完成！共处理 {len(subdirs)} 个文件夹，{total_images} 张图片。")
+                        st.success(f"✅ 处理完成！共处理 {len(image_folders)} 个Sheet（对应 {len(image_folders)} 个文件夹），{total_images} 张图片。")
                         
                         # 提供下载链接
                         with open(output_path, 'rb') as f:
@@ -731,7 +966,10 @@ def render_excel_tool():
                             output_filename = f"updated_{Path(existing_file).stem}_{int(time.time())}.xlsx"
                         else:
                             # 新建模式：使用输入目录名作为文件名
-                            output_filename = f"screenshots_{Path(input_path).name}_{int(time.time())}.xlsx"
+                            if use_local_path:
+                                output_filename = f"screenshots_{input_path_obj.name}_{int(time.time())}.xlsx"
+                            else:
+                                output_filename = f"screenshots_{int(time.time())}.xlsx"
                         
                         output_path = Path(temp_dir) / output_filename
                         
@@ -739,9 +977,17 @@ def render_excel_tool():
                         processor.save_workbook(output_path)
                         
                         # 保存到session state
-                        st.session_state.last_input_path = input_path
+                        if use_local_path:
+                            st.session_state.last_input_path = str(input_path_obj)
                         # 保存输出文件路径供下载使用
                         st.session_state.last_output_file = str(output_path)
+                        
+                        # 清理临时文件（如果不是本地路径）
+                        if not use_local_path and uploaded_files_path and uploaded_files_path.exists():
+                            try:
+                                shutil.rmtree(uploaded_files_path)
+                            except:
+                                pass
                         
                         # 完成提示
                         progress_bar.progress(1.0)
