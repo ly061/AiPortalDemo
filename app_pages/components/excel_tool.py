@@ -20,10 +20,10 @@ SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.w
 
 # 默认配置
 DEFAULT_CONFIG = {
-    'header_rows': 1,
+    'header_rows': 3,
     'spacing_rows': 2,
-    'image_max_width': 800,
-    'image_max_height': 600,
+    'image_max_width': 700,
+    'image_max_height': 500,
     'output_filename': 'screenshots.xlsx',
     'sheet_name_max_length': 31,
 }
@@ -699,7 +699,7 @@ def render_excel_tool():
         max_width = st.number_input(
             "Max Width（最大宽度，像素）",
             min_value=1,
-            value=800,
+            value=700,
             help="图片的最大宽度限制，与Max Height配合使用，保持图片比例的同时限制最大尺寸"
         )
         
@@ -718,7 +718,7 @@ def render_excel_tool():
         max_height = st.number_input(
             "Max Height（最大高度，像素）",
             min_value=1,
-            value=600,
+            value=500,
             help="图片的最大高度限制，与Max Width配合使用，保持图片比例的同时限制最大尺寸"
         )
         
@@ -750,7 +750,7 @@ def render_excel_tool():
         header_rows = st.number_input(
             "Header Rows（Header行数）",
             min_value=0,
-            value=1,
+            value=3,
             help="Excel工作表顶部的预留行数，图片会从第header_rows+1行开始插入"
         )
     
