@@ -12,6 +12,7 @@ from components import (
     render_json_diff,
     render_timestamp_converter,
     render_excel_tool,
+    render_api_tester,
     render_tool_download
 )
 
@@ -34,7 +35,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔧 Tool Selection")
 tool_option = st.sidebar.radio(
     "Select Tool",
-    ["📝 JSON Beautifier", "🔄 JSON Diff", "⏰ Timestamp Converter", "📊 Excel Tool", "🔗 Tool Download"],
+    ["📝 JSON Beautifier", "🔄 JSON Diff", "⏰ Timestamp Converter", "📊 Excel Tool", "🔌 API Tester", "🔗 Tool Download"],
     label_visibility="collapsed"
 )
 st.sidebar.markdown("---")
@@ -50,6 +51,8 @@ elif tool_option == "⏰ Timestamp Converter":
     render_timestamp_converter()
 elif tool_option == "📊 Excel Tool":
     render_excel_tool()
+elif tool_option == "🔌 API Tester":
+    render_api_tester()
 else:  # Tool Download
     render_tool_download()
 
