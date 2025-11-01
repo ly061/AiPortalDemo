@@ -49,6 +49,128 @@ def setup_logging(level: str = 'INFO') -> logging.Logger:
 
 logger = setup_logging()
 
+def cleanup_old_temp_files(temp_base_dir: Path, max_age_hours: int = 24) -> int:
+    """
+    清理过期的临时文件
+    
+    Args:
+        temp_base_dir: 临时文件基础目录
+        max_age_hours: 文件最大保留时间（小时），默认24小时
+    
+    Returns:
+        清理的文件/目录数量
+    """
+    if not temp_base_dir.exists():
+        return 0
+    
+    import time
+    current_time = time.time()
+    max_age_seconds = max_age_hours * 3600
+    cleaned_count = 0
+    
+    try:
+        for item in temp_base_dir.iterdir():
+            try:
+                # 跳过清理记录文件
+                if item.name == ".last_cleanup_date":
+                    continue
+                
+                # 获取文件/目录的修改时间
+                mtime = item.stat().st_mtime
+                age = current_time - mtime
+                
+                # 如果文件超过最大保留时间，则删除
+                if age > max_age_seconds:
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                        logger.info(f"清理过期目录: {item}")
+                    else:
+                        item.unlink()
+                        logger.info(f"清理过期文件: {item}")
+                    cleaned_count += 1
+            except Exception as e:
+                logger.warning(f"清理文件失败 {item}: {e}")
+                continue
+    
+    except Exception as e:
+        logger.error(f"清理临时文件目录失败: {e}")
+    
+    return cleaned_count
+
+def check_and_cleanup(temp_base_dir: Path, cleanup_hour: int = 23, cleanup_minute: int = 59, max_age_hours: int = 24) -> bool:
+    """
+    检查时间并执行清理
+    
+    Args:
+        temp_base_dir: 临时文件基础目录
+        cleanup_hour: 清理时间（小时），默认23
+        cleanup_minute: 清理时间（分钟），默认59
+        max_age_hours: 文件最大保留时间（小时），默认24小时
+    
+    Returns:
+        是否执行了清理
+    """
+    cleanup_record_file = temp_base_dir / ".last_cleanup_date"
+    
+    current_time = time.time()
+    current_datetime = time.localtime(current_time)
+    current_hour = current_datetime.tm_hour
+    current_minute = current_datetime.tm_min
+    current_date_str = time.strftime("%Y-%m-%d", current_datetime)
+    
+    # 检查是否到了清理时间（清理时间前后5分钟窗口，确保能执行到）
+    time_window = 5  # 5分钟窗口
+    
+    # 计算时间窗口的开始和结束分钟
+    if cleanup_minute >= time_window:
+        minute_start = cleanup_minute - time_window
+        minute_end = cleanup_minute
+        check_hour = cleanup_hour
+    else:
+        # 如果分钟数小于窗口，检查上一个小时的最后几分钟
+        minute_start = 60 - (time_window - cleanup_minute)
+        minute_end = cleanup_minute
+        check_hour = cleanup_hour
+    
+    # 检查是否在清理时间窗口内
+    in_time_window = False
+    
+    # 情况1：清理时间在当前小时（例如23:59，窗口是23:54-23:59）
+    if cleanup_minute >= time_window:
+        if current_hour == cleanup_hour and minute_start <= current_minute <= minute_end:
+            in_time_window = True
+    # 情况2：清理时间跨越小时边界（例如00:03，窗口是23:58-00:03）
+    else:
+        if current_hour == cleanup_hour and current_minute <= minute_end:
+            in_time_window = True
+        elif current_hour == (cleanup_hour - 1) % 24 and current_minute >= minute_start:
+            in_time_window = True
+    
+    if in_time_window:
+        # 读取上次清理日期
+        last_cleanup_date = None
+        if cleanup_record_file.exists():
+            try:
+                last_cleanup_date = cleanup_record_file.read_text().strip()
+            except:
+                pass
+        
+        # 如果今天还没有清理过，则执行清理
+        if last_cleanup_date != current_date_str:
+            cleaned_count = cleanup_old_temp_files(temp_base_dir, max_age_hours=max_age_hours)
+            if cleaned_count > 0:
+                logger.info(f"定时清理（{current_date_str} {cleanup_hour:02d}:{cleanup_minute:02d}）：清理了 {cleaned_count} 个过期临时文件/目录")
+            
+            # 记录本次清理日期
+            try:
+                cleanup_record_file.write_text(current_date_str)
+            except:
+                pass
+            
+            return True
+    
+    return False
+
 def extract_zip_to_temp_dir(uploaded_zip, temp_base_dir: Path) -> Path:
     """解压ZIP文件到临时目录，返回解压后的目录路径"""
     # 创建唯一的临时目录
@@ -604,6 +726,9 @@ def render_excel_tool():
     temp_base_dir = Path(os.path.join(os.path.expanduser("~"), ".streamlit_temp"))
     temp_base_dir.mkdir(parents=True, exist_ok=True)
     
+    # 定期清理过期临时文件（默认每天23:59清理，保留24小时内的文件）
+    check_and_cleanup(temp_base_dir, cleanup_hour=23, cleanup_minute=59, max_age_hours=24)
+    
     uploaded_files_path = None
     
     if upload_mode == "📦 ZIP文件（推荐 - 保持文件夹结构）":
@@ -663,13 +788,16 @@ def render_excel_tool():
             
             try:
                 # 保存上传的图片文件
+                logger.info(f"开始保存 {len(uploaded_images)} 张图片文件")
                 with st.spinner("正在保存图片文件..."):
                     images_dir = save_uploaded_files_to_temp_dir(uploaded_images, temp_base_dir)
                     st.session_state.uploaded_files_dir = str(images_dir)
                     uploaded_files_path = images_dir
                     st.success(f"✅ 已上传 {len(uploaded_images)} 张图片")
+                    logger.info(f"图片文件保存成功: {len(uploaded_images)} 张图片 -> {images_dir}")
             except Exception as e:
                 st.error(f"❌ 保存图片文件失败: {str(e)}")
+                logger.error(f"保存图片文件失败: {e}", exc_info=True)
                 uploaded_files_path = None
     
     # 文件路径设置（保留原有功能，但标记为可选）
@@ -821,21 +949,82 @@ def render_excel_tool():
     
     # 清空按钮逻辑
     if clear_button:
-        # 清理临时文件
+        logger.info("用户点击清空按钮，开始清理临时文件和状态")
+        
+        # 清理上传的文件目录
         if st.session_state.get('uploaded_files_dir'):
             try:
                 temp_path = Path(st.session_state.uploaded_files_dir)
                 if temp_path.exists():
                     shutil.rmtree(temp_path)
-            except:
-                pass
+                    logger.info(f"已删除上传的文件目录: {temp_path}")
+            except Exception as e:
+                logger.warning(f"删除上传文件目录失败: {e}")
+        
+        # 清理上传的Excel文件
+        if st.session_state.get('excel_existing_file'):
+            try:
+                excel_file = Path(st.session_state.excel_existing_file)
+                if excel_file.exists():
+                    excel_file.unlink()
+                    logger.info(f"已删除上传的Excel文件: {excel_file}")
+            except Exception as e:
+                logger.warning(f"删除Excel文件失败: {e}")
+        
+        # 清理生成的输出文件
+        if st.session_state.get('last_output_file'):
+            try:
+                output_file = Path(st.session_state.last_output_file)
+                if output_file.exists():
+                    output_file.unlink()
+                    logger.info(f"已删除生成的输出文件: {output_file}")
+            except Exception as e:
+                logger.warning(f"删除输出文件失败: {e}")
+        
+        # 清空session state
         st.session_state.excel_input_path = ""
         st.session_state.excel_existing_file = ""
         st.session_state.uploaded_files_dir = None
+        st.session_state.last_output_file = None
+        
+        logger.info("清空操作完成")
         st.rerun()
     
     # 退出按钮逻辑
     if exit_button:
+        logger.info("用户点击退出按钮，开始清理临时文件和状态")
+        
+        # 清理上传的文件目录
+        if st.session_state.get('uploaded_files_dir'):
+            try:
+                temp_path = Path(st.session_state.uploaded_files_dir)
+                if temp_path.exists():
+                    shutil.rmtree(temp_path)
+                    logger.info(f"已删除上传的文件目录: {temp_path}")
+            except Exception as e:
+                logger.warning(f"删除上传文件目录失败: {e}")
+        
+        # 清理上传的Excel文件
+        if st.session_state.get('excel_existing_file'):
+            try:
+                excel_file = Path(st.session_state.excel_existing_file)
+                if excel_file.exists():
+                    excel_file.unlink()
+                    logger.info(f"已删除上传的Excel文件: {excel_file}")
+            except Exception as e:
+                logger.warning(f"删除Excel文件失败: {e}")
+        
+        # 清理生成的输出文件
+        if st.session_state.get('last_output_file'):
+            try:
+                output_file = Path(st.session_state.last_output_file)
+                if output_file.exists():
+                    output_file.unlink()
+                    logger.info(f"已删除生成的输出文件: {output_file}")
+            except Exception as e:
+                logger.warning(f"删除输出文件失败: {e}")
+        
+        logger.info("退出操作完成")
         st.stop()
     
     # 处理按钮逻辑
@@ -921,17 +1110,21 @@ def render_excel_tool():
                             
                             if image_files:
                                 status_text.text(f"处理文件夹: {sheet_name} ({len(image_files)} 张图片)")
+                                logger.info(f"开始处理文件夹: {sheet_name}, 包含 {len(image_files)} 张图片")
                                 
                                 # 获取或创建工作表（使用文件夹名作为sheet名）
                                 actual_sheet_name = processor.get_or_create_sheet(sheet_name)
+                                logger.info(f"处理Sheet: {actual_sheet_name}, 包含 {len(image_files)} 张图片")
                                 
                                 # 逐个处理图片
                                 for idx, image_path in enumerate(image_files, 1):
                                     status_text.text(f"处理中: {sheet_name}/{image_path.name} ({processed_images + idx}/{total_images})")
                                     image_title = f"{idx}. {image_path.stem}"
+                                    logger.debug(f"添加图片到Sheet: {actual_sheet_name}, 图片: {image_path.name}")
                                     processor.add_image_to_sheet(actual_sheet_name, image_path, image_title)
                                     progress_bar.progress((processed_images + idx) / total_images)
                                 
+                                logger.info(f"Sheet {actual_sheet_name} 处理完成，共处理 {len(image_files)} 张图片")
                                 processed_images += len(image_files)
                         
                         # 保存文件到临时目录
@@ -951,7 +1144,9 @@ def render_excel_tool():
                         output_path = Path(temp_dir) / output_filename
                         
                         status_text.text("正在保存Excel文件...")
+                        logger.info(f"保存Excel文件到: {output_path}")
                         processor.save_workbook(output_path)
+                        logger.info(f"Excel文件保存成功: {output_path}")
                         
                         # 保存到session state
                         if use_local_path:
@@ -963,8 +1158,9 @@ def render_excel_tool():
                         if not use_local_path and uploaded_files_path and uploaded_files_path.exists():
                             try:
                                 shutil.rmtree(uploaded_files_path)
-                            except:
-                                pass
+                                logger.info(f"处理完成，已删除上传的文件目录: {uploaded_files_path}")
+                            except Exception as e:
+                                logger.warning(f"删除上传文件目录失败: {e}")
                         
                         # 完成提示
                         progress_bar.progress(1.0)
@@ -972,13 +1168,35 @@ def render_excel_tool():
                         st.success(f"✅ 处理完成！共处理 {len(image_folders)} 个Sheet（对应 {len(image_folders)} 个文件夹），{total_images} 张图片。")
                         
                         # 提供下载链接
+                        logger.info(f"准备下载Excel文件: {output_filename} (路径: {output_path})")
                         with open(output_path, 'rb') as f:
-                            st.download_button(
+                            file_data = f.read()
+                            download_clicked = st.download_button(
                                 label="📥 下载Excel文件",
-                                data=f.read(),
+                                data=file_data,
                                 file_name=output_filename,
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key=f"download_{int(time.time())}"
                             )
+                            
+                            # 如果下载按钮被点击，延迟删除文件（给用户时间下载）
+                            if download_clicked:
+                                logger.info(f"用户点击下载按钮，文件: {output_filename}")
+                                # 延迟删除文件（60秒后）
+                                import threading
+                                def delayed_delete(file_path, delay=60):
+                                    """延迟删除文件（60秒后）"""
+                                    time.sleep(delay)
+                                    try:
+                                        if Path(file_path).exists():
+                                            Path(file_path).unlink()
+                                            logger.info(f"延迟删除输出文件: {file_path}")
+                                    except Exception as e:
+                                        logger.warning(f"延迟删除文件失败 {file_path}: {e}")
+                                
+                                thread = threading.Thread(target=delayed_delete, args=(output_path,))
+                                thread.daemon = True
+                                thread.start()
                 else:
                     # 没有子文件夹：处理当前目录的图片
                     image_files = get_image_files(input_path_obj)
@@ -992,13 +1210,17 @@ def render_excel_tool():
                         
                         # 获取或创建工作表
                         actual_sheet_name = processor.get_or_create_sheet("Screenshots")
+                        logger.info(f"处理Sheet: {actual_sheet_name}, 包含 {len(image_files)} 张图片")
                         
                         # 逐个处理图片并显示进度
                         for idx, image_path in enumerate(image_files, 1):
                             status_text.text(f"处理中: {image_path.name} ({idx}/{len(image_files)})")
                             image_title = f"{idx}. {image_path.stem}"
+                            logger.debug(f"添加图片到Sheet: {actual_sheet_name}, 图片: {image_path.name}")
                             processor.add_image_to_sheet(actual_sheet_name, image_path, image_title)
                             progress_bar.progress(idx / len(image_files))
+                        
+                        logger.info(f"Sheet {actual_sheet_name} 处理完成，共处理 {len(image_files)} 张图片")
                         
                         # 保存文件到临时目录
                         temp_dir = os.path.join(os.path.expanduser("~"), ".streamlit_temp")
@@ -1017,7 +1239,9 @@ def render_excel_tool():
                         output_path = Path(temp_dir) / output_filename
                         
                         status_text.text("正在保存Excel文件...")
+                        logger.info(f"保存Excel文件到: {output_path}")
                         processor.save_workbook(output_path)
+                        logger.info(f"Excel文件保存成功: {output_path}")
                         
                         # 保存到session state
                         if use_local_path:
@@ -1029,8 +1253,9 @@ def render_excel_tool():
                         if not use_local_path and uploaded_files_path and uploaded_files_path.exists():
                             try:
                                 shutil.rmtree(uploaded_files_path)
-                            except:
-                                pass
+                                logger.info(f"处理完成，已删除上传的文件目录: {uploaded_files_path}")
+                            except Exception as e:
+                                logger.warning(f"删除上传文件目录失败: {e}")
                         
                         # 完成提示
                         progress_bar.progress(1.0)
@@ -1038,13 +1263,36 @@ def render_excel_tool():
                         st.success(f"✅ 处理完成！共处理 {len(image_files)} 张图片。")
                         
                         # 提供下载链接
+                        logger.info(f"准备下载Excel文件: {output_filename} (路径: {output_path})")
                         with open(output_path, 'rb') as f:
-                            st.download_button(
+                            file_data = f.read()
+                            download_clicked = st.download_button(
                                 label="📥 下载Excel文件",
-                                data=f.read(),
+                                data=file_data,
                                 file_name=output_filename,
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key=f"download_{int(time.time())}"
                             )
+                            
+                            # 如果下载按钮被点击，标记文件待删除
+                            # 注意：由于Streamlit的限制，无法直接检测下载完成，所以会在下次清空或退出时删除
+                            if download_clicked:
+                                logger.info(f"用户点击下载按钮，文件: {output_filename}")
+                                # 延迟删除文件（给用户时间下载）
+                                import threading
+                                def delayed_delete(file_path, delay=60):
+                                    """延迟删除文件（60秒后）"""
+                                    time.sleep(delay)
+                                    try:
+                                        if Path(file_path).exists():
+                                            Path(file_path).unlink()
+                                            logger.info(f"延迟删除输出文件: {file_path}")
+                                    except Exception as e:
+                                        logger.warning(f"延迟删除文件失败 {file_path}: {e}")
+                                
+                                thread = threading.Thread(target=delayed_delete, args=(output_path,))
+                                thread.daemon = True
+                                thread.start()
                     
             except Exception as e:
                 st.error(f"❌ 处理过程中出错: {str(e)}")
