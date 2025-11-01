@@ -560,6 +560,35 @@ def render_excel_tool():
     
     st.info("将目录中的截图文件批量插入到Excel文件中，支持新建文件或追加到现有文件")
     
+    # 离线版本下载
+    with st.expander("💻 离线版本下载（点击展开）", expanded=False):
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.markdown("""
+            **提供离线版本工具，无需网络连接即可使用！**
+            
+            - ✅ 完全离线运行，保护数据隐私
+            - ✅ 支持批量处理大量图片
+            - ✅ 功能与在线版本一致
+            """)
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)  # 垂直居中
+            tool_path = Path(__file__).parent.parent.parent / "ExcelScreenshotTool"
+            if tool_path.exists():
+                with open(tool_path, 'rb') as f:
+                    st.download_button(
+                        label="📥 下载离线版本",
+                        data=f.read(),
+                        file_name="ExcelScreenshotTool",
+                        mime="application/octet-stream",
+                        use_container_width=True,
+                        help="下载Excel截图工具离线版本（macOS ARM64）"
+                    )
+            else:
+                st.warning("⚠️ 离线版本文件未找到")
+    
+
+    
     # 使用方法介绍
     with st.expander("📖 详细使用说明（点击展开）", expanded=False):
         st.markdown("""
