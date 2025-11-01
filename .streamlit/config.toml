@@ -8,6 +8,7 @@ font = "sans serif"
 [server]
 headless = true
 port = 8501
+address = "0.0.0.0"  # 允许外部访问
 
 [browser]
 gatherUsageStats = false

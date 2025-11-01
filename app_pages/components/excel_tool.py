@@ -14,6 +14,14 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment
 from openpyxl.drawing.image import Image as ExcelImage
 
+# 尝试导入pandas和xlrd用于支持.xls格式
+try:
+    import pandas as pd
+    XLS_SUPPORT = True
+except ImportError:
+    XLS_SUPPORT = False
+    pd = None
+
 # ==================== Excel Tool Helper Classes ====================
 # 支持的图片格式
 SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp'}
@@ -243,9 +251,38 @@ class ExcelProcessor:
         return self.workbook
     
     def load_workbook(self, file_path: Path) -> Workbook:
-        """加载现有的工作簿"""
+        """加载现有的工作簿（支持.xlsx和.xls格式）"""
         try:
-            self.workbook = load_workbook(file_path)
+            file_ext = file_path.suffix.lower()
+            
+            # 如果是.xls格式，需要先转换为.xlsx
+            if file_ext == '.xls':
+                if not XLS_SUPPORT:
+                    raise ImportError("需要安装pandas和xlrd库以支持.xls格式文件")
+                
+                # 使用pandas读取.xls文件
+                xls_file = pd.ExcelFile(file_path)
+                
+                # 创建临时.xlsx文件
+                temp_xlsx = file_path.parent / f"{file_path.stem}_temp.xlsx"
+                with pd.ExcelWriter(temp_xlsx, engine='openpyxl') as writer:
+                    for sheet_name in xls_file.sheet_names:
+                        df = pd.read_excel(xls_file, sheet_name=sheet_name)
+                        df.to_excel(writer, sheet_name=sheet_name, index=False)
+                
+                # 使用openpyxl加载转换后的文件
+                self.workbook = load_workbook(temp_xlsx)
+                
+                # 删除临时文件
+                try:
+                    temp_xlsx.unlink()
+                except:
+                    pass
+            else:
+                # 直接使用openpyxl加载.xlsx文件
+                self.workbook = load_workbook(file_path)
+            
+            # 初始化current_row
             for sheet_name in self.workbook.sheetnames:
                 if sheet_name not in self.current_row:
                     sheet = self.workbook[sheet_name]
@@ -445,8 +482,9 @@ def render_excel_tool():
         - **类型**: 文件上传器
         - **可见性**: 仅在"使用已存在Excel文件"模式下显示
         - **说明**: 上传要追加截图的Excel文件
-        - **操作**: 使用文件上传器上传Excel文件（仅支持.xlsx格式）
-        - **验证**: 文件必须有效且为.xlsx格式
+        - **操作**: 使用文件上传器上传Excel文件（支持.xlsx和.xls格式）
+        - **验证**: 文件必须有效且为.xlsx或.xls格式
+        - **注意**: 如果上传.xls格式文件，需要安装pandas和xlrd库（会自动安装）
         
         #### 文件下载
         - **说明**: 处理完成后会自动生成Excel文件并提供下载按钮
@@ -535,6 +573,7 @@ def render_excel_tool():
         ### ⚠️ 注意事项
         
         - 需要安装 `openpyxl` 和 `Pillow` 库：`pip install openpyxl Pillow`
+        - 如果要支持.xls格式，还需要安装：`pip install pandas xlrd`
         - 图片文件会按文件名排序后插入
         - 处理大文件时可能需要一些时间，请耐心等待
         - 如果输出目录不存在，会自动创建
@@ -672,8 +711,8 @@ def render_excel_tool():
     if use_existing_file:
         uploaded_file = st.file_uploader(
             "Existing Excel File（上传已存在的Excel文件）",
-            type=["xlsx"],
-            help="上传要追加截图的Excel文件",
+            type=["xlsx", "xls"],
+            help="上传要追加截图的Excel文件（支持.xlsx和.xls格式）",
             key="upload_excel"
         )
         
@@ -685,6 +724,10 @@ def render_excel_tool():
                 f.write(uploaded_file.getbuffer())
             st.session_state.excel_existing_file = temp_path
             st.info(f"📁 已上传文件: {uploaded_file.name}")
+            
+            # 如果是.xls格式，提示需要安装依赖
+            if uploaded_file.name.lower().endswith('.xls') and not XLS_SUPPORT:
+                st.warning("⚠️ 检测到.xls格式文件，需要安装pandas和xlrd库。请运行: pip install pandas xlrd")
     else:
         st.info("ℹ️ 将创建新的Excel文件，处理完成后可直接下载")
     
@@ -815,8 +858,8 @@ def render_excel_tool():
             existing_file = st.session_state.get('excel_existing_file', "")
             if not existing_file or not os.path.isfile(existing_file):
                 errors.append("❌ 请上传已存在的Excel文件")
-            elif not existing_file.endswith('.xlsx'):
-                errors.append("❌ Excel文件必须是.xlsx格式")
+            elif not existing_file.lower().endswith(('.xlsx', '.xls')):
+                errors.append("❌ Excel文件必须是.xlsx或.xls格式")
         
         if errors:
             for error in errors:

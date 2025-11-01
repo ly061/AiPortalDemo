@@ -41,9 +41,16 @@ fi
 # 启动Streamlit应用
 echo "🚀 启动Portal..."
 echo ""
+
+# 获取本机IP地址
+LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
+
 echo "=========================================="
 echo "   Portal已启动"
-echo "   访问地址: http://localhost:8501"
+echo "   本地访问: http://localhost:8501"
+if [ ! -z "$LOCAL_IP" ]; then
+    echo "   局域网访问: http://$LOCAL_IP:8501"
+fi
 echo "   按 Ctrl+C 停止服务"
 echo "=========================================="
 echo ""
