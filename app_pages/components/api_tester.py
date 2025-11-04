@@ -49,11 +49,11 @@ def render_api_tester():
         st.markdown("**Headers Input Mode:**")
     with col_radio:
         headers_mode = st.radio(
-            "",
+            "Headers Input Mode",
             ["Simple", "JSON"],
             horizontal=True,
             help="Simple: Add headers one by one. JSON: Paste headers as JSON object.",
-            label_visibility="collapsed"
+            label_visibility="hidden"
         )
     with col_num:
         num_headers = st.number_input(
@@ -107,11 +107,11 @@ def render_api_tester():
             st.markdown("**Query Parameters Mode:**")
         with col_radio:
             params_mode = st.radio(
-                "",
+                "Query Parameters Mode",
                 ["Simple", "JSON"],
                 horizontal=True,
                 help="Simple: Add query parameters one by one. JSON: Paste parameters as JSON object.",
-                label_visibility="collapsed",
+                label_visibility="hidden",
                 key="params_mode"
             )
         with col_num:
