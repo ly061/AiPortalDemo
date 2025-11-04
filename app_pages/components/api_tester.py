@@ -119,7 +119,7 @@ def render_api_tester():
                 "Number of Parameters",
                 min_value=0,
                 max_value=20,
-                value=0,
+                value=1,
                 step=1,
                 key="num_params"
             )
@@ -161,6 +161,7 @@ def render_api_tester():
         body_type = st.selectbox(
             "Body Type",
             ["None", "JSON", "Form Data", "x-www-form-urlencoded", "Raw Text"],
+            index=2,
             help="Select the format of request body"
         )
         
