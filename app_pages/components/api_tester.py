@@ -13,7 +13,7 @@ def render_api_tester():
     """Render API Tester tool interface"""
     st.markdown("## 🔌 API Tester")
     
-    st.info("Test HTTP APIs with support for various methods, headers, and request bodies")
+    st.info("Test HTTP APIs with support for various methods, headers, query parameters (GET), and request bodies")
     
     # Initialize session state
     if 'request_history' not in st.session_state:
@@ -97,6 +97,63 @@ def render_api_tester():
                 headers = json.loads(headers_json)
             except json.JSONDecodeError as e:
                 st.error(f"Invalid JSON format: {e}")
+    
+    # Query Parameters (for GET and other methods that use query string)
+    query_params = {}
+    if http_method in ["GET", "DELETE", "HEAD", "OPTIONS"]:
+        st.markdown("#### Query Parameters")
+        col_label, col_radio, col_num = st.columns([2, 2, 2])
+        with col_label:
+            st.markdown("**Query Parameters Mode:**")
+        with col_radio:
+            params_mode = st.radio(
+                "",
+                ["Simple", "JSON"],
+                horizontal=True,
+                help="Simple: Add query parameters one by one. JSON: Paste parameters as JSON object.",
+                label_visibility="collapsed",
+                key="params_mode"
+            )
+        with col_num:
+            num_params = st.number_input(
+                "Number of Parameters",
+                min_value=0,
+                max_value=20,
+                value=0,
+                step=1,
+                key="num_params"
+            )
+        
+        if params_mode == "Simple":
+            for i in range(num_params):
+                col_key, col_val = st.columns(2)
+                with col_key:
+                    key = st.text_input(
+                        f"Parameter Key {i+1}",
+                        key=f"param_key_{i}",
+                        placeholder="key"
+                    )
+                with col_val:
+                    val = st.text_input(
+                        f"Parameter Value {i+1}",
+                        key=f"param_val_{i}",
+                        placeholder="value"
+                    )
+                if key:
+                    query_params[key] = val
+        else:
+            params_json = st.text_area(
+                "Query Parameters (JSON)",
+                value='{\n  "key": "value"\n}',
+                height=150,
+                help='Enter query parameters as JSON object, e.g., {"page": "1", "limit": "10"}',
+                key="params_json"
+            )
+            if params_json:
+                try:
+                    query_params = json.loads(params_json)
+                except json.JSONDecodeError as e:
+                    st.error(f"Invalid JSON format: {e}")
     
     # Request Body (only for methods that support body)
     if http_method in ["POST", "PUT", "PATCH"]:
@@ -213,6 +270,10 @@ def render_api_tester():
                                 'headers': headers,
                                 'timeout': 30
                             }
+                            
+                            # Add query parameters for GET, DELETE, HEAD, OPTIONS
+                            if http_method in ["GET", "DELETE", "HEAD", "OPTIONS"] and query_params:
+                                request_kwargs['params'] = query_params
                             
                             # Add body/data based on body type
                             if http_method in ["POST", "PUT", "PATCH"]:
