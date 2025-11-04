@@ -158,12 +158,29 @@ def render_api_tester():
     # Request Body (only for methods that support body)
     if http_method in ["POST", "PUT", "PATCH"]:
         st.markdown("#### Request Body")
-        body_type = st.selectbox(
-            "Body Type",
-            ["None", "JSON", "Form Data", "x-www-form-urlencoded", "Raw Text"],
-            index=2,
-            help="Select the format of request body"
-        )
+        col_body_type, col_num_fields = st.columns([2, 1])
+        
+        with col_body_type:
+            body_type = st.selectbox(
+                "Body Type",
+                ["None", "JSON", "Form Data", "Raw Text"],
+                index=2,
+                help="Select the format of request body"
+            )
+        
+        with col_num_fields:
+            if body_type == "Form Data":
+                num_form_fields = st.number_input(
+                    "Number of Form Fields",
+                    min_value=0,
+                    max_value=20,
+                    value=1,
+                    step=1,
+                    key="form_data_count"
+                )
+            else:
+                # 初始化变量，避免未定义错误
+                num_form_fields = st.session_state.get("form_data_count", 1)
         
         request_body = None
         request_data = None
@@ -182,14 +199,6 @@ def render_api_tester():
                     st.error(f"Invalid JSON format: {e}")
         
         elif body_type == "Form Data":
-            num_form_fields = st.number_input(
-                "Number of Form Fields",
-                min_value=0,
-                max_value=20,
-                value=1,
-                step=1,
-                key="form_data_count"
-            )
             form_data = {}
             for i in range(num_form_fields):
                 col_key, col_val = st.columns(2)
@@ -208,34 +217,6 @@ def render_api_tester():
                 if key:
                     form_data[key] = val
             request_data = form_data if form_data else None
-        
-        elif body_type == "x-www-form-urlencoded":
-            num_url_fields = st.number_input(
-                "Number of URL Encoded Fields",
-                min_value=0,
-                max_value=20,
-                value=1,
-                step=1,
-                key="urlencoded_count"
-            )
-            urlencoded_data = {}
-            for i in range(num_url_fields):
-                col_key, col_val = st.columns(2)
-                with col_key:
-                    key = st.text_input(
-                        f"Field Key {i+1}",
-                        key=f"urlencoded_key_{i}",
-                        placeholder="key"
-                    )
-                with col_val:
-                    val = st.text_input(
-                        f"Field Value {i+1}",
-                        key=f"urlencoded_val_{i}",
-                        placeholder="value"
-                    )
-                if key:
-                    urlencoded_data[key] = val
-            request_data = urlencoded_data if urlencoded_data else None
         
         elif body_type == "Raw Text":
             request_body = st.text_area(
@@ -280,7 +261,7 @@ def render_api_tester():
                             if http_method in ["POST", "PUT", "PATCH"]:
                                 if body_type == "JSON" and request_body is not None:
                                     request_kwargs['json'] = request_body
-                                elif body_type in ["Form Data", "x-www-form-urlencoded"] and request_data:
+                                elif body_type == "Form Data" and request_data:
                                     request_kwargs['data'] = request_data
                                 elif body_type == "Raw Text" and request_body:
                                     request_kwargs['data'] = request_body
