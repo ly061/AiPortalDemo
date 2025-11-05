@@ -5,12 +5,57 @@ import streamlit as st
 import requests
 import json
 import time
+import logging
+import os
 from typing import Dict, List, Optional
 from datetime import datetime
 from urllib.parse import urlparse
 
+# 配置日志记录器
+def setup_logger():
+    """配置并返回日志记录器"""
+    logger = logging.getLogger('api_tester')
+    logger.setLevel(logging.INFO)
+    
+    # 如果日志记录器已经配置过handler，直接返回
+    if logger.handlers:
+        return logger
+    
+    # 创建日志目录（如果不存在）
+    log_dir = 'logs'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    # 创建文件处理器
+    log_file = os.path.join(log_dir, 'api_tester.log')
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    
+    # 创建控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    
+    # 创建日志格式
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+# 初始化日志记录器
+logger = setup_logger()
+
 def render_api_tester():
     """Render API Tester tool interface"""
+    logger.info("API Tester component initialized")
+    
     st.markdown("## 🔌 API Tester")
     
     st.info("Test HTTP APIs with support for various methods, headers, query parameters (GET), and request bodies")
@@ -18,6 +63,7 @@ def render_api_tester():
     # Initialize session state
     if 'request_history' not in st.session_state:
         st.session_state.request_history = []
+        logger.debug("Initialized request_history in session state")
     
     # Request Configuration Section
     st.markdown("### Request Configuration")
@@ -95,7 +141,9 @@ def render_api_tester():
         if headers_json:
             try:
                 headers = json.loads(headers_json)
+                logger.debug(f"Parsed headers from JSON: {len(headers)} headers")
             except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse headers JSON: {e}")
                 st.error(f"Invalid JSON format: {e}")
     
     # Query Parameters (for GET and other methods that use query string)
@@ -152,7 +200,9 @@ def render_api_tester():
             if params_json:
                 try:
                     query_params = json.loads(params_json)
+                    logger.debug(f"Parsed query parameters from JSON: {len(query_params)} parameters")
                 except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse query parameters JSON: {e}")
                     st.error(f"Invalid JSON format: {e}")
     
     # Request Body (only for methods that support body)
@@ -195,7 +245,9 @@ def render_api_tester():
             if body_json:
                 try:
                     request_body = json.loads(body_json)
+                    logger.debug(f"Parsed JSON body: {len(str(request_body))} characters")
                 except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON body: {e}")
                     st.error(f"Invalid JSON format: {e}")
         
         elif body_type == "Form Data":
@@ -235,14 +287,24 @@ def render_api_tester():
     
     if send_button:
         if not url:
+            logger.warning("Send request clicked but URL is empty")
             st.error("❌ Please enter a URL")
         else:
             # Validate URL
             try:
                 parsed_url = urlparse(url)
                 if not parsed_url.scheme or not parsed_url.netloc:
+                    logger.warning(f"Invalid URL format: {url}")
                     st.error("❌ Invalid URL format. Please include protocol (http:// or https://)")
                 else:
+                    # 记录请求信息
+                    logger.info(f"Preparing {http_method} request to {url}")
+                    logger.debug(f"Headers: {headers}")
+                    if query_params:
+                        logger.debug(f"Query parameters: {query_params}")
+                    if request_body:
+                        logger.debug(f"Request body type: {body_type}")
+                    
                     with st.spinner("Sending request..."):
                         try:
                             # Prepare request parameters
@@ -267,9 +329,14 @@ def render_api_tester():
                                     request_kwargs['data'] = request_body
                             
                             # Send request
+                            logger.info(f"Sending {http_method} request to {url}")
                             start_time = time.time()
                             response = requests.request(**request_kwargs)
                             response_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+                            
+                            # 记录响应信息
+                            logger.info(f"Request completed: {response.status_code} - {response.reason} - {response_time:.2f}ms")
+                            logger.debug(f"Response headers: {dict(response.headers)}")
                             
                             # Store in history
                             history_item = {
@@ -280,6 +347,7 @@ def render_api_tester():
                                 'response_time': f"{response_time:.2f}ms"
                             }
                             st.session_state.request_history.insert(0, history_item)
+                            logger.debug(f"Added request to history: {len(st.session_state.request_history)} total requests")
                             
                             # Display response
                             st.markdown(f"#### Status: `{response.status_code} {response.reason}`")
@@ -319,15 +387,20 @@ def render_api_tester():
                             st.success("✅ Request sent successfully!")
                             
                         except requests.exceptions.Timeout:
+                            logger.error(f"Request timeout after 30 seconds: {http_method} {url}")
                             st.error("❌ Request timeout (30 seconds)")
-                        except requests.exceptions.ConnectionError:
+                        except requests.exceptions.ConnectionError as e:
+                            logger.error(f"Connection error: {http_method} {url} - {str(e)}")
                             st.error("❌ Connection error. Please check the URL and your network connection.")
                         except requests.exceptions.RequestException as e:
+                            logger.error(f"Request failed: {http_method} {url} - {str(e)}")
                             st.error(f"❌ Request failed: {str(e)}")
                         except Exception as e:
+                            logger.exception(f"Unexpected error during request: {http_method} {url} - {str(e)}")
                             st.error(f"❌ Unexpected error: {str(e)}")
                             st.code(str(e))
             except Exception as e:
+                logger.exception(f"URL validation error: {url} - {str(e)}")
                 st.error(f"❌ URL validation error: {str(e)}")
     else:
         st.info("Click 'Send Request' to see the response here")
@@ -348,6 +421,7 @@ def render_api_tester():
             st.info(f"... and {len(st.session_state.request_history) - 10} more requests")
         
         if st.button("🗑️ Clear History"):
+            logger.info(f"Clearing request history: {len(st.session_state.request_history)} requests")
             st.session_state.request_history = []
             st.rerun()
     else:
