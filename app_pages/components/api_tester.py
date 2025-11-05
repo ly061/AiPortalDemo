@@ -56,6 +56,11 @@ def render_api_tester():
     """Render API Tester tool interface"""
     logger.info("API Tester component initialized")
     
+    # 初始化变量，避免未定义错误
+    request_body = None
+    request_data = None
+    body_type = None
+    
     st.markdown("## 🔌 API Tester")
     
     st.info("Test HTTP APIs with support for various methods, headers, query parameters (GET), and request bodies")
@@ -302,8 +307,10 @@ def render_api_tester():
                     logger.debug(f"Headers: {headers}")
                     if query_params:
                         logger.debug(f"Query parameters: {query_params}")
-                    if request_body:
+                    if request_body is not None:
                         logger.debug(f"Request body type: {body_type}")
+                    if request_data is not None:
+                        logger.debug(f"Request data (Form Data): {len(request_data)} fields")
                     
                     with st.spinner("Sending request..."):
                         try:
