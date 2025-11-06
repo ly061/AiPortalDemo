@@ -13,7 +13,8 @@ from components import (
     render_timestamp_converter,
     render_excel_tool,
     render_api_tester,
-    render_tool_download
+    render_tool_download,
+    render_mermaid_diagram
 )
 
 st.set_page_config(
@@ -35,7 +36,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔧 Tool Selection")
 tool_option = st.sidebar.radio(
     "Select Tool",
-    ["📝 JSON Beautifier", "🔄 JSON Diff", "⏰ Timestamp Converter", "📊 Excel Tool", "🔌 API Tester", "🔗 Tool Download"],
+    ["📝 JSON Beautifier", "🔄 JSON Diff", "⏰ Timestamp Converter", "📊 Excel Tool", "🔌 API Tester", "📊 Mermaid Diagram", "🔗 Tool Download"],
     label_visibility="collapsed"
 )
 st.sidebar.markdown("---")
@@ -53,6 +54,8 @@ elif tool_option == "📊 Excel Tool":
     render_excel_tool()
 elif tool_option == "🔌 API Tester":
     render_api_tester()
+elif tool_option == "📊 Mermaid Diagram":
+    render_mermaid_diagram()
 else:  # Tool Download
     render_tool_download()
 
