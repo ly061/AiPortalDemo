@@ -128,6 +128,79 @@ MERMAID_TEMPLATES = {
     }
 }
 
+def apply_flowchart_colors(mermaid_code: str, color: str) -> str:
+    """Apply colors to flowchart nodes"""
+    import re
+    
+    if not color or color == "None":
+        return mermaid_code
+    
+    # Extract color hex code
+    if color.startswith('#'):
+        color_hex = color
+    else:
+        # Color name to hex mapping
+        color_map = {
+            'red': '#ff6b6b',
+            'blue': '#4dabf7',
+            'green': '#51cf66',
+            'yellow': '#ffd43b',
+            'purple': '#9775fa',
+            'orange': '#ff922b',
+            'pink': '#f06595',
+            'cyan': '#3bc9db',
+            'gray': '#868e96',
+        }
+        color_hex = color_map.get(color.lower(), '#4dabf7')
+    
+    lines = mermaid_code.split('\n')
+    result_lines = []
+    node_ids = set()
+    class_def_added = False
+    
+    # First pass: collect all node IDs
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith('graph') or stripped.startswith('flowchart'):
+            continue
+        
+        # Match node patterns: A[text], A(text), A{text}, A((text))
+        node_pattern = r'\b([A-Za-z0-9_]+)(?:\[[^\]]+\]|\([^\)]+\)|\{[^\}]+\}|\(\([^\)]+\)\))'
+        matches = re.finditer(node_pattern, stripped)
+        for match in matches:
+            node_ids.add(match.group(1))
+    
+    if not node_ids:
+        return mermaid_code
+    
+    # Second pass: build result with classDef and apply classes
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        
+        # Add classDef after graph declaration
+        if (stripped.startswith('graph') or stripped.startswith('flowchart')) and not class_def_added:
+            result_lines.append(line)
+            result_lines.append(f'    classDef nodeColor fill:{color_hex},stroke:#333,stroke-width:2px')
+            class_def_added = True
+            continue
+        
+        # Apply color class to nodes in this line
+        if any(node_id in stripped for node_id in node_ids):
+            # Replace node definitions to add class
+            def add_class(match):
+                node_id = match.group(1)
+                node_content = match.group(2)
+                # Check if class already applied
+                if ':::' in line:
+                    return match.group(0)
+                return f'{node_id}{node_content}:::nodeColor'
+            
+            line = re.sub(r'\b([A-Za-z0-9_]+)(\[[^\]]+\]|\([^\)]+\)|\{[^\}]+\}|\(\([^\)]+\)\))', add_class, line)
+        
+        result_lines.append(line)
+    
+    return '\n'.join(result_lines)
+
 def get_mermaid_html(mermaid_code: str, theme: str = "default") -> str:
     """Generate HTML containing Mermaid diagram"""
     theme_config = {
@@ -223,6 +296,57 @@ def render_mermaid_diagram():
             if st.button("💡 Example Code", use_container_width=True, help="Load example code"):
                 example_code_clicked = True
         
+        # Flowchart color selection (only show for flowcharts)
+        # Check if current code is a flowchart (before widget creation)
+        current_code_check = st.session_state.get('mermaid_code_input', '')
+        is_flowchart = False
+        if current_code_check:
+            code_lower = current_code_check.lower().strip()
+            is_flowchart = code_lower.startswith("graph") or code_lower.startswith("flowchart")
+        
+        # Initialize color if not set
+        if 'flowchart_color' not in st.session_state:
+            st.session_state.flowchart_color = "None"
+        
+        if is_flowchart:
+            st.markdown("#### 🎨 Flowchart Color")
+            
+            color_options = {
+                "None": "None",
+                "Red": "#ff6b6b",
+                "Blue": "#4dabf7",
+                "Green": "#51cf66",
+                "Yellow": "#ffd43b",
+                "Purple": "#9775fa",
+                "Orange": "#ff922b",
+                "Pink": "#f06595",
+                "Cyan": "#3bc9db",
+                "Gray": "#868e96",
+            }
+            
+            # Get current selected color index
+            current_color_index = 0
+            if st.session_state.flowchart_color:
+                for idx, (name, value) in enumerate(color_options.items()):
+                    if value == st.session_state.flowchart_color:
+                        current_color_index = idx
+                        break
+            
+            # Use key to track changes - Streamlit will automatically rerun on selectbox change
+            # The key ensures the selectbox value is stored in session_state
+            selected_color_name = st.selectbox(
+                "Node Color",
+                list(color_options.keys()),
+                index=current_color_index,
+                help="Select color for flowchart nodes",
+                key="flowchart_color_selectbox"
+            )
+            
+            # Update session state with selected color value immediately
+            # Streamlit's selectbox automatically triggers rerun when value changes
+            selected_color_value = color_options[selected_color_name]
+            st.session_state.flowchart_color = selected_color_value
+        
         # Handle action button clicks (Note: these occur after widget creation, so special handling needed)
         if clear_code:
             # Use update_code flag to update code
@@ -237,20 +361,34 @@ def render_mermaid_diagram():
     with col2:
         st.markdown("### 🎨 Diagram Preview")
         
-        # Get current code (prioritize text_area value)
+        # Get current code (use text_area value from session_state)
+        # Note: In Streamlit, when selectbox changes, it triggers rerun automatically
+        # So we need to get the latest value from session_state
         current_mermaid_code = st.session_state.get('mermaid_code_input', '')
         
+        # Check if it's a flowchart and apply colors
+        processed_code = current_mermaid_code
         if current_mermaid_code and current_mermaid_code.strip():
+            code_lower = current_mermaid_code.lower().strip()
+            is_flowchart = code_lower.startswith("graph") or code_lower.startswith("flowchart")
+            
+            # Apply colors if it's a flowchart and color is selected
+            # Get the latest color value from session_state (updated by selectbox)
+            flowchart_color = st.session_state.get('flowchart_color', "None")
+            if is_flowchart and flowchart_color and flowchart_color != "None":
+                processed_code = apply_flowchart_colors(current_mermaid_code, flowchart_color)
+        
+        if processed_code and processed_code.strip():
             try:
                 # Render Mermaid diagram
-                html_content = get_mermaid_html(current_mermaid_code, theme)
+                html_content = get_mermaid_html(processed_code, theme)
                 st.components.v1.html(html_content, height=450, scrolling=True)
                 
                 st.success("✅ Diagram rendered successfully!")
                 
             except Exception as e:
                 st.error(f"❌ Diagram rendering failed: {str(e)}")
-                st.code(current_mermaid_code, language="mermaid")
+                st.code(processed_code, language="mermaid")
         else:
             st.info("👈 Please enter Mermaid code on the left, diagram will be displayed here")
     
