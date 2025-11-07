@@ -2,6 +2,7 @@
 Mermaid Diagram Generator Component - Generate flowcharts based on Mermaid code
 """
 import streamlit as st
+import streamlit_mermaid as st_mermaid
 
 # Mermaid diagram type templates
 MERMAID_TEMPLATES = {
@@ -201,61 +202,9 @@ def apply_flowchart_colors(mermaid_code: str, color: str) -> str:
     
     return '\n'.join(result_lines)
 
-def get_mermaid_html(mermaid_code: str, theme: str = "default") -> str:
-    """Generate HTML containing Mermaid diagram"""
-    theme_config = {
-        "default": "",
-        "dark": 'theme: "dark",',
-        "forest": 'theme: "forest",',
-        "neutral": 'theme: "neutral",',
-    }
-    
-    theme_js = theme_config.get(theme, "")
-    
-    html_template = f"""
-    <div class="mermaid-container">
-        <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-        <script>
-            mermaid.initialize({{
-                startOnLoad: true,
-                {theme_js}
-                flowchart: {{
-                    useMaxWidth: true,
-                    htmlLabels: true,
-                    curve: "basis"
-                }},
-                sequence: {{
-                    diagramMarginX: 50,
-                    diagramMarginY: 10,
-                    actorMargin: 50
-                }}
-            }});
-        </script>
-        <div class="mermaid">
-{mermaid_code}
-        </div>
-    </div>
-    <style>
-        .mermaid-container {{
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 10px 0;
-        }}
-        .mermaid {{
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }}
-    </style>
-    """
-    return html_template
 
 def render_mermaid_diagram():
     """Render Mermaid diagram generator tool interface"""
-    
-    # Use default theme
-    theme = "default"
     
     # Main interface - Two column layout
     col1, col2 = st.columns([1, 1])
@@ -361,6 +310,83 @@ def render_mermaid_diagram():
     with col2:
         st.markdown("### 🎨 Diagram Preview")
         
+        # Add CSS to move control buttons to the right, hide RESET button, and prevent overlap
+        st.markdown("""
+        <style>
+        /* Style for mermaid diagram container */
+        div[data-testid="stMermaid"],
+        div[data-testid="stMermaid"] > div,
+        iframe[title*="mermaid"],
+        iframe[title*="streamlit-mermaid"] {
+            position: relative !important;
+            overflow: visible !important;
+        }
+        /* Target control buttons - move to right side */
+        div[data-testid="stMermaid"] button,
+        div[data-testid="stMermaid"] div[role="button"],
+        div[data-testid="stMermaid"] > div:last-child {
+            position: absolute !important;
+            right: 10px !important;
+            top: 10px !important;
+            z-index: 1000 !important;
+            background: white !important;
+            padding: 5px 10px !important;
+            border: 1px solid #ccc !important;
+            border-radius: 4px !important;
+        }
+        /* Hide RESET button specifically */
+        div[data-testid="stMermaid"] button:contains("RESET"),
+        button[title*="Reset"],
+        button[title*="RESET"],
+        button:has-text("RESET") {
+            display: none !important;
+        }
+        /* Hide RESET button using attribute selector */
+        iframe[title*="mermaid"] {
+            position: relative !important;
+        }
+        /* Ensure diagram has padding on right to avoid overlap */
+        div[data-testid="stMermaid"] svg,
+        div[data-testid="stMermaid"] > div:first-child {
+            margin-right: 80px !important;
+            padding-right: 80px !important;
+        }
+        </style>
+        <script>
+        // Hide RESET button using JavaScript
+        function hideResetButton() {
+            setTimeout(function() {
+                // Try to find and hide RESET button in iframe
+                var iframes = document.querySelectorAll('iframe[title*="mermaid"], iframe[title*="streamlit"]');
+                iframes.forEach(function(iframe) {
+                    try {
+                        var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        var buttons = iframeDoc.querySelectorAll('button, div[role="button"]');
+                        buttons.forEach(function(btn) {
+                            if (btn.textContent && btn.textContent.includes('RESET')) {
+                                btn.style.display = 'none';
+                            }
+                        });
+                    } catch(e) {
+                        // Cross-origin restrictions
+                    }
+                });
+                // Also try in main document
+                var allButtons = document.querySelectorAll('button, div[role="button"]');
+                allButtons.forEach(function(btn) {
+                    if (btn.textContent && btn.textContent.includes('RESET')) {
+                        btn.style.display = 'none';
+                    }
+                });
+            }, 500);
+        }
+        window.addEventListener('load', hideResetButton);
+        // Use MutationObserver to watch for new elements
+        var observer = new MutationObserver(hideResetButton);
+        observer.observe(document.body, { childList: true, subtree: true });
+        </script>
+        """, unsafe_allow_html=True)
+        
         # Get current code (use text_area value from session_state)
         # Note: In Streamlit, when selectbox changes, it triggers rerun automatically
         # So we need to get the latest value from session_state
@@ -378,11 +404,13 @@ def render_mermaid_diagram():
             if is_flowchart and flowchart_color and flowchart_color != "None":
                 processed_code = apply_flowchart_colors(current_mermaid_code, flowchart_color)
         
+        # Create a container with relative positioning for the diagram
+        st.markdown('<div style="position: relative; width: 100%;">', unsafe_allow_html=True)
+        
         if processed_code and processed_code.strip():
             try:
-                # Render Mermaid diagram
-                html_content = get_mermaid_html(processed_code, theme)
-                st.components.v1.html(html_content, height=450, scrolling=True)
+                # Render Mermaid diagram using streamlit-mermaid library
+                st_mermaid.st_mermaid(processed_code)
                 
                 st.success("✅ Diagram rendered successfully!")
                 
@@ -391,6 +419,8 @@ def render_mermaid_diagram():
                 st.code(processed_code, language="mermaid")
         else:
             st.info("👈 Please enter Mermaid code on the left, diagram will be displayed here")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # Syntax help (displayed by default)
     # st.markdown("---")
