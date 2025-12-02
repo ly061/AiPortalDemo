@@ -1,10 +1,17 @@
 import streamlit as st
+import httpx
+import json
 
 st.set_page_config(
     page_title="AI Assistant",
     page_icon="🤖",
     layout="wide"
 )
+
+# API配置
+API_BASE_URL = "http://127.0.0.1:8000"
+API_KEY = "1LtJU5J8KxkjryJtuRfdf1BIriTDV2DE"
+API_ENDPOINT = f"{API_BASE_URL}/api/v1/chat/completions"
 
 # 自定义CSS样式
 st.markdown("""
@@ -25,6 +32,59 @@ st.markdown('<div class="main-title">🤖 AI Assistant</div>', unsafe_allow_html
 # 初始化聊天历史
 if 'messages' not in st.session_state:
     st.session_state.messages = []
+
+def chat_completion(messages: list) -> str:
+    """
+    非流式调用chat completions API
+    """
+    headers = {
+        "X-API-Key": API_KEY,
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "messages": messages,
+        "stream": False
+    }
+    
+    try:
+        response = httpx.post(
+            API_ENDPOINT,
+            headers=headers,
+            json=payload,
+            timeout=600.0
+        )
+        
+        # 检查响应状态码
+        if response.status_code != 200:
+            try:
+                error_data = response.json()
+                error_text = error_data.get("detail", response.text)
+            except:
+                error_text = response.text
+            return f"❌ API错误 (状态码: {response.status_code}): {error_text}"
+        
+        # 解析响应
+        try:
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                message = data["choices"][0].get("message", {})
+                content = message.get("content", "")
+                if content:
+                    return content
+                else:
+                    return "❌ API返回的响应中没有内容"
+            else:
+                return "❌ API返回的响应中没有choices"
+        except json.JSONDecodeError as e:
+            return f"❌ 无法解析API响应: {str(e)}"
+            
+    except httpx.TimeoutException:
+        return "❌ 请求超时，请稍后重试"
+    except httpx.ConnectError:
+        return f"❌ 无法连接到API服务器 ({API_BASE_URL})，请确保服务正在运行"
+    except Exception as e:
+        return f"❌ 发生错误: {str(e)}"
 
 # 问题输入框（固定在顶部）
 col1, col2 = st.columns([5, 1])
@@ -49,176 +109,28 @@ if send_button and user_question:
     with st.chat_message("user"):
         st.markdown(user_question)
     
-    # 生成AI回复（这里是模拟回复，实际应该调用AI API）
+    # 生成AI回复（使用非流式API调用）
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            # 模拟回复逻辑
-            if "portal" in user_question.lower():
-                response = """
-**Testing Tools Portal** is a comprehensive platform designed to enhance team collaboration and automate workflows.
-
-Key features include:
-- 📋 **Test Case Generation**: Quickly generate test cases using AI
-- 💬 **Guideline Chatbot**: Access team-specific guidelines
-- ⚙️ **AI Automation**: Generate automation scripts
-- 📊 **BA Toolkit**: Business analysis tools
-- 🛠️ **Practical Tools**: JSON beautifier, diff tools, etc.
-
-You can navigate to different modules from the sidebar!
-                """
-            elif "session state" in user_question.lower():
-                response = """
-**Session State** in Streamlit allows you to persist data across reruns.
-
-Example usage:
-```python
-import streamlit as st
-
-# Initialize session state
-if 'counter' not in st.session_state:
-    st.session_state.counter = 0
-
-# Update session state
-if st.button('Increment'):
-    st.session_state.counter += 1
-
-st.write(f"Counter: {st.session_state.counter}")
-```
-
-Session state is perfect for:
-- Storing user inputs
-- Maintaining chat history
-- Keeping track of application state
-                """
-            elif "interactive chart" in user_question.lower():
-                response = """
-**Creating Interactive Charts** in Streamlit is easy!
-
-Using Plotly for interactivity:
-```python
-import streamlit as st
-import plotly.express as px
-
-# Sample data
-df = px.data.iris()
-
-# Create interactive chart
-fig = px.scatter(df, x="sepal_width", y="sepal_length", 
-                 color="species", size="petal_length")
-
-st.plotly_chart(fig, use_container_width=True)
-```
-
-You can also use:
-- `st.line_chart()` for simple line charts
-- `st.bar_chart()` for bar charts
-- Altair, Bokeh, or other charting libraries
-                """
-            elif "customize" in user_question.lower():
-                response = """
-**Customizing Your Streamlit App:**
-
-1. **Theme Configuration** (.streamlit/config.toml):
-```toml
-[theme]
-primaryColor = "#1E88E5"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F0F2F6"
-textColor = "#262730"
-font = "sans serif"
-```
-
-2. **Custom CSS**:
-```python
-st.markdown('''
-<style>
-.custom-class {
-    color: blue;
-    font-size: 20px;
-}
-</style>
-''', unsafe_allow_html=True)
-```
-
-3. **Page Configuration**:
-```python
-st.set_page_config(
-    page_title="My App",
-    page_icon="🚀",
-    layout="wide"
-)
-```
-                """
-            elif "deploy" in user_question.lower():
-                response = """
-**Deploying Streamlit Apps:**
-
-**Option 1: Streamlit Community Cloud (Free)**
-1. Push your code to GitHub
-2. Go to share.streamlit.io
-3. Connect your GitHub repo
-4. Deploy!
-
-**Option 2: Docker**
-```dockerfile
-FROM python:3.9-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-EXPOSE 8501
-CMD ["streamlit", "run", "Home.py"]
-```
-
-**Option 3: Cloud Platforms**
-- AWS EC2/ECS
-- Google Cloud Run
-- Azure App Service
-- Heroku
-
-Make sure to include a `requirements.txt` file!
-                """
-            elif "test case" in user_question.lower():
-                response = """
-**Writing Test Cases:**
-
-Good test cases should include:
-1. **Test Case ID**: Unique identifier
-2. **Title**: Clear description
-3. **Preconditions**: Setup requirements
-4. **Test Steps**: Detailed steps to execute
-5. **Expected Results**: What should happen
-6. **Test Data**: Sample data to use
-
-Example:
-```
-TC_001: User Login Test
-Preconditions: User account exists
-Steps:
-1. Navigate to login page
-2. Enter username and password
-3. Click "Login" button
-Expected: User is redirected to dashboard
-```
-
-You can use our **Generate Test Cases** module to automate this!
-                """
-            else:
-                response = f"""
-I understand you're asking about: "{user_question}"
-
-This is a placeholder response. In a production environment, this would connect to an actual AI service like:
-- OpenAI GPT API
-- Anthropic Claude API
-- Custom AI model
-
-Feel free to ask more questions about Portal, Streamlit, testing, or development!
-                """
-            
-            st.markdown(response)
-            
-            # 添加助手回复到历史
-            st.session_state.messages.append({"role": "assistant", "content": response})
+        # 准备消息列表（转换为API格式）
+        api_messages = []
+        for msg in st.session_state.messages:
+            api_messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+        
+        # 显示加载状态并获取AI回复
+        with st.spinner("正在思考..."):
+            try:
+                response = chat_completion(api_messages)
+                st.markdown(response)
+                
+                # 添加助手回复到历史
+                st.session_state.messages.append({"role": "assistant", "content": response})
+            except Exception as e:
+                error_msg = f"❌ 发生错误: {str(e)}"
+                st.error(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
     
     # 刷新页面以清空输入框
     st.rerun()
