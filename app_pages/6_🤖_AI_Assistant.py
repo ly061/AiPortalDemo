@@ -86,12 +86,13 @@ def chat_completion(messages: list) -> str:
     except Exception as e:
         return f"❌ 发生错误: {str(e)}"
 
-# 问题输入框（固定在顶部）
-col1, col2 = st.columns([5, 1])
-with col1:
-    user_question = st.text_input("Ask a question...", key="question_input", label_visibility="collapsed", placeholder="Ask a question...")
-with col2:
-    send_button = st.button("📤 Send", type="primary", use_container_width=True)
+# 问题输入框（固定在顶部）- 使用 form 来自动清空输入框
+with st.form("question_form", clear_on_submit=True):
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        user_question = st.text_input("Ask a question...", key="question_input", label_visibility="collapsed", placeholder="Ask a question...")
+    with col2:
+        send_button = st.form_submit_button("📤 Send", type="primary", use_container_width=True)
 
 st.markdown("---")
 
@@ -102,12 +103,15 @@ for message in st.session_state.messages:
 
 # 处理用户输入（只在点击发送按钮时）
 if send_button and user_question:
+    # 保存用户输入
+    question_text = user_question.strip()
+    
     # 添加用户消息到历史
-    st.session_state.messages.append({"role": "user", "content": user_question})
+    st.session_state.messages.append({"role": "user", "content": question_text})
     
     # 显示用户消息
     with st.chat_message("user"):
-        st.markdown(user_question)
+        st.markdown(question_text)
     
     # 生成AI回复（使用非流式API调用）
     with st.chat_message("assistant"):
@@ -132,7 +136,7 @@ if send_button and user_question:
                 st.error(error_msg)
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
     
-    # 刷新页面以清空输入框
+    # 刷新页面以显示新消息
     st.rerun()
 
 # 页脚
