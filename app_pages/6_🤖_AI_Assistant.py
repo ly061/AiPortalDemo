@@ -86,20 +86,35 @@ def chat_completion(messages: list) -> str:
     except Exception as e:
         return f"❌ 发生错误: {str(e)}"
 
-# 问题输入框（固定在顶部）- 使用 form 来自动清空输入框
+# 显示聊天历史
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# 页脚
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #9E9E9E; font-size: 0.85rem;">
+    <p>⚖️ Legal Disclaimer: This AI assistant provides general guidance. Always verify information for production use.</p>
+
+</div>
+""", unsafe_allow_html=True)
+
+# 清除对话按钮
+if st.session_state.messages:
+    if st.button("🗑️ Clear Chat History"):
+        st.session_state.messages = []
+        st.rerun()
+
+st.markdown("---")
+
+# 问题输入框（固定在底部）- 使用 form 来自动清空输入框
 with st.form("question_form", clear_on_submit=True):
     col1, col2 = st.columns([5, 1])
     with col1:
         user_question = st.text_input("Ask a question...", key="question_input", label_visibility="collapsed", placeholder="Ask a question...")
     with col2:
         send_button = st.form_submit_button("📤 Send", type="primary", use_container_width=True)
-
-st.markdown("---")
-
-# 显示聊天历史
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
 
 # 处理用户输入（只在点击发送按钮时）
 if send_button and user_question:
@@ -138,19 +153,4 @@ if send_button and user_question:
     
     # 刷新页面以显示新消息
     st.rerun()
-
-# 页脚
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #9E9E9E; font-size: 0.85rem;">
-    <p>⚖️ Legal Disclaimer: This AI assistant provides general guidance. Always verify information for production use.</p>
-
-</div>
-""", unsafe_allow_html=True)
-
-# 清除对话按钮
-if st.session_state.messages:
-    if st.button("🗑️ Clear Chat History"):
-        st.session_state.messages = []
-        st.rerun()
 

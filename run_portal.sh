@@ -30,13 +30,11 @@ fi
 echo "🔄 激活虚拟环境..."
 source venv/bin/activate
 
-# 检查Streamlit是否安装
-if ! python -c "import streamlit" &> /dev/null; then
-    echo "📥 安装依赖包..."
-    pip install -r requirements.txt
-    echo "✅ 依赖包安装完成"
-    echo ""
-fi
+# 安装依赖包（每次都安装）
+echo "📥 安装/更新依赖包..."
+pip install -r requirements.txt
+echo "✅ 依赖包安装完成"
+echo ""
 
 # 启动Streamlit应用
 echo "🚀 启动Portal..."
