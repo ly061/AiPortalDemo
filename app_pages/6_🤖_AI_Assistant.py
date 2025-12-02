@@ -91,14 +91,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 页脚
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #9E9E9E; font-size: 0.85rem;">
-    <p>⚖️ Legal Disclaimer: This AI assistant provides general guidance. Always verify information for production use.</p>
 
-</div>
-""", unsafe_allow_html=True)
 
 # 清除对话按钮
 if st.session_state.messages:
@@ -106,7 +99,7 @@ if st.session_state.messages:
         st.session_state.messages = []
         st.rerun()
 
-st.markdown("---")
+# st.markdown("---")
 
 # 问题输入框（固定在底部）- 使用 form 来自动清空输入框
 with st.form("question_form", clear_on_submit=True):
