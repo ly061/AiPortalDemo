@@ -23,6 +23,23 @@ st.markdown("""
         margin-bottom: 1.5rem;
         text-align: center;
     }
+    /* 固定输入框在底部 */
+    form[data-testid="question_form"] {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        background-color: white !important;
+        padding: 1rem !important;
+        z-index: 999 !important;
+        border-top: 1px solid #e0e0e0 !important;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.1) !important;
+        margin: 0 !important;
+    }
+    /* 为聊天内容添加底部边距，避免被固定输入框遮挡 */
+    .main .block-container {
+        padding-bottom: 120px !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -32,6 +49,10 @@ st.markdown('<div class="main-title">🤖 AI Assistant</div>', unsafe_allow_html
 # 初始化聊天历史
 if 'messages' not in st.session_state:
     st.session_state.messages = []
+
+# 初始化处理状态
+if 'processing' not in st.session_state:
+    st.session_state.processing = False
 
 def chat_completion(messages: list) -> str:
     """
@@ -91,15 +112,42 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-
+# 如果正在处理，显示思考状态
+if st.session_state.processing:
+    with st.chat_message("assistant"):
+        with st.spinner("正在思考..."):
+            # 准备消息列表（转换为API格式）
+            api_messages = []
+            for msg in st.session_state.messages:
+                api_messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+            
+            try:
+                response = chat_completion(api_messages)
+                st.markdown(response)
+                
+                # 添加助手回复到历史
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                st.session_state.processing = False
+            except Exception as e:
+                error_msg = f"❌ 发生错误: {str(e)}"
+                st.error(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                st.session_state.processing = False
+    
+    # 刷新页面以显示新消息
+    st.rerun()
 
 # 清除对话按钮
 if st.session_state.messages:
     if st.button("🗑️ Clear Chat History"):
         st.session_state.messages = []
+        st.session_state.processing = False
         st.rerun()
 
-# st.markdown("---")
+st.markdown("---")
 
 # 问题输入框（固定在底部）- 使用 form 来自动清空输入框
 with st.form("question_form", clear_on_submit=True):
@@ -117,33 +165,9 @@ if send_button and user_question:
     # 添加用户消息到历史
     st.session_state.messages.append({"role": "user", "content": question_text})
     
-    # 显示用户消息
-    with st.chat_message("user"):
-        st.markdown(question_text)
+    # 设置处理状态
+    st.session_state.processing = True
     
-    # 生成AI回复（使用非流式API调用）
-    with st.chat_message("assistant"):
-        # 准备消息列表（转换为API格式）
-        api_messages = []
-        for msg in st.session_state.messages:
-            api_messages.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
-        
-        # 显示加载状态并获取AI回复
-        with st.spinner("正在思考..."):
-            try:
-                response = chat_completion(api_messages)
-                st.markdown(response)
-                
-                # 添加助手回复到历史
-                st.session_state.messages.append({"role": "assistant", "content": response})
-            except Exception as e:
-                error_msg = f"❌ 发生错误: {str(e)}"
-                st.error(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
-    
-    # 刷新页面以显示新消息
+    # 刷新页面以显示用户消息和处理状态
     st.rerun()
 
