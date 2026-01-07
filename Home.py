@@ -12,11 +12,11 @@ st.set_page_config(
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
-# 定义角色权限映射
+# 定义角色权限映射（页面7添加到导航中，但通过CSS隐藏侧边栏显示）
 ROLE_PERMISSIONS = {
-    "Manual Tester": [1, 2, 5, 6],
-    "Automation Tester": [2, 3, 5, 6],
-    "BA": [2, 4, 5, 6]
+    "Manual Tester": [1, 2, 5, 6, 7],
+    "Automation Tester": [2, 3, 5, 6, 7],
+    "BA": [2, 4, 5, 6, 7]
 }
 
 # 定义页面信息
@@ -26,7 +26,8 @@ PAGE_INFO = {
     3: {"icon": "⚙️", "title": "AI Automation", "file": "app_pages/3_⚙️_AI_Automation.py"},
     4: {"icon": "📊", "title": "BA工具集", "file": "app_pages/4_📊_BA工具集.py"},
     5: {"icon": "🛠️", "title": "Tools", "file": "app_pages/5_🛠️_Tools.py"},
-    6: {"icon": "🤖", "title": "AI Assistant", "file": "app_pages/6_🤖_AI_Assistant.py"}
+    6: {"icon": "🤖", "title": "AI Assistant", "file": "app_pages/6_🤖_AI_Assistant.py"},
+    7: {"icon": "📈", "title": "图表展示", "file": "app_pages/7_📈_Charts.py"}
 }
 
 # Custom CSS styles
@@ -75,6 +76,49 @@ st.markdown("""
         background-color: #E3F2FD;
         border-color: #0D47A1;
     }
+    /* 右上角图表菜单按钮 */
+    .chart-menu-button-container {
+        position: fixed;
+        top: 50px;
+        right: 50px;
+        z-index: 999999;
+    }
+    .chart-menu-button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white !important;
+        border: none;
+        border-radius: 25px;
+        padding: 50px 50px;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-decoration: none;
+    }
+    .chart-menu-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        color: white !important;
+    }
+    .chart-menu-button:active {
+        transform: translateY(0);
+    }
+    /* 确保按钮在Streamlit界面之上 */
+    .stApp > header {
+        z-index: 999998;
+    }
+    /* 隐藏侧边栏中的图表展示菜单项 */
+    [data-testid="stSidebarNav"] a[href*="Charts"],
+    [data-testid="stSidebarNav"] a[href*="7_📈_Charts"],
+    [data-testid="stSidebarNav"] li:has(a[href*="Charts"]),
+    [data-testid="stSidebarNav"] li:has(a[href*="7_📈_Charts"]) {
+        display: none !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -101,8 +145,79 @@ def build_navigation():
     
     return pages
 
+# 添加右上角图表菜单按钮
+def add_top_right_chart_button():
+    """在所有页面右上角添加图表入口按钮"""
+    if st.session_state.get('user_role'):
+        # 检查查询参数，如果需要跳转则跳转
+        if st.query_params.get("goto_charts") == "true":
+            st.query_params.clear()
+            st.switch_page("app_pages/7_📈_Charts.py")
+            return
+        
+        # 使用st.empty()创建占位符，然后用HTML实现按钮
+        button_placeholder = st.empty()
+        button_html = """
+        <div style="position: fixed; top: 10px; right: 10px; z-index: 999999;">
+            <button id="chart-top-right-btn" style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                border-radius: 25px;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+                cursor: pointer;
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+                transition: all 0.3s ease;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+            ">
+                <span>📈</span>
+                <span>图表展示</span>
+            </button>
+        </div>
+        <script>
+        (function() {
+            function initButton() {
+                const btn = document.getElementById('chart-top-right-btn');
+                if (btn && !btn.dataset.initialized) {
+                    btn.dataset.initialized = 'true';
+                    btn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // 在当前窗口内跳转，不打开新标签页
+                        window.location.href = window.location.pathname + '?goto_charts=true';
+                    });
+                    btn.addEventListener('mouseenter', function() {
+                        this.style.transform = 'translateY(-2px)';
+                        this.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.6)';
+                        this.style.background = 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)';
+                    });
+                    btn.addEventListener('mouseleave', function() {
+                        this.style.transform = 'translateY(0)';
+                        this.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+                        this.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                    });
+                }
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initButton);
+            } else {
+                setTimeout(initButton, 100);
+            }
+        })();
+        </script>
+        """
+        button_placeholder.markdown(button_html, unsafe_allow_html=True)
+
 # 主页面内容
 def show_home_page():
+    # 添加右上角按钮
+    if st.session_state.get('user_role'):
+        add_top_right_chart_button()
+    
     # Page title
     st.markdown('<div class="main-header">🚀 Testing Tools Portal</div>', unsafe_allow_html=True)
     
